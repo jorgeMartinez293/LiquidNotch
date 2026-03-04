@@ -7,8 +7,6 @@ class NotchViewModel: ObservableObject {
         didSet { updateWindowFrame() }
     }
     
-
-    
     private var hoverTimer: Timer?
     func setHover(_ hovering: Bool) {
         if hovering {
@@ -22,22 +20,18 @@ class NotchViewModel: ObservableObject {
         }
     }
     
-
-    
-    // ... (rest of properties)
-    
     func updateWindowFrame() {
         guard let window = window, let screen = window.screen else { return }
-        
-        // ... (rest of logic)
         
         var targetWidth: CGFloat
         var targetHeight: CGFloat
         
-
-        if isHovered {
+        if isHovered || isTargeted {
             targetWidth = expandedWidth
             targetHeight = expandedHeight
+        } else if showingIndicator != nil {
+            targetWidth = indicatorWidth
+            targetHeight = notchBaseHeight
         } else {
             // Collapsed state (Music Info or Notch)
              targetWidth = isPlaying ? playingWidth : notchBaseWidth
@@ -66,28 +60,53 @@ class NotchViewModel: ObservableObject {
     @Published var currentTrack: TrackInfo?
     @Published var playerPosition: Double = 0
     @Published var volume: Double = 0.5
+    @Published var brightness: Double = 0.5
+    @Published var showingIndicator: IndicatorType? = nil
     
     var artworkUrl: String? { currentTrack?.artworkUrl }
     
     var shouldShowMusicInfo: Bool {
-        return isPlaying && !isHovered
+        return isPlaying && !isHovered && showingIndicator == nil
+    }
+    
+    var shouldShowIndicator: Bool {
+        return showingIndicator != nil && !isHovered && !isTargeted
+    }
+    
+    var indicatorLevel: Double {
+        switch showingIndicator {
+        case .volume: return volume
+        case .brightness: return brightness
+        case .none: return 0
+        }
+    }
+    
+    var indicatorIconName: String {
+        switch showingIndicator {
+        case .volume:
+            return volume <= 0.01 ? "speaker.slash.fill" : "speaker.wave.2.fill"
+        case .brightness:
+            if brightness < 0.5 { return "sun.min.fill" }
+            return "sun.max.fill"
+        case .none:
+            return "speaker.fill"
+        }
     }
     
     // Dimensions
     let notchBaseWidth: CGFloat = 180
-    let notchBaseHeight: CGFloat = 30 // Reduced to hide under real notch
+    let notchBaseHeight: CGFloat = 32
     
-    let expandedWidth: CGFloat = 440 // Increased to fit content
-
-    let expandedHeight: CGFloat = 180 // Adjusted for increased vertical separation
+    let expandedWidth: CGFloat = 440
+    let expandedHeight: CGFloat = 180
     
-
-
+    let indicatorWidth: CGFloat = 310
     
     var playingWidth: CGFloat { notchBaseWidth + 80 }
     
     var currentNotchWidth: CGFloat {
         if isHovered || isTargeted { return expandedWidth }
+        if showingIndicator != nil { return indicatorWidth }
         return isPlaying ? playingWidth : notchBaseWidth
     }
     
@@ -98,8 +117,6 @@ class NotchViewModel: ObservableObject {
     
     weak var window: NSWindow?
     private var cancellables = Set<AnyCancellable>()
-    
-
     
     init() {
         // Sync Service -> ViewModel
@@ -138,6 +155,20 @@ class NotchViewModel: ObservableObject {
             .receive(on: RunLoop.main)
             .assign(to: \.volume, on: self)
             .store(in: &cancellables)
+        
+        systemService.$brightness
+            .receive(on: RunLoop.main)
+            .assign(to: \.brightness, on: self)
+            .store(in: &cancellables)
+        
+        systemService.$showingIndicator
+            .receive(on: RunLoop.main)
+            .sink { [weak self] indicator in
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    self?.showingIndicator = indicator
+                }
+            }
+            .store(in: &cancellables)
             
         // Trigger Window Resize on Play/Hover change
         $isPlaying
@@ -154,7 +185,7 @@ class NotchViewModel: ObservableObject {
             .store(in: &cancellables)
             
         $isHovered
-             .sink { [weak self] _ in // Expanded is larger now
+             .sink { [weak self] _ in
                  DispatchQueue.main.async { self?.updateWindowFrame() }
              }
              .store(in: &cancellables)
@@ -164,9 +195,13 @@ class NotchViewModel: ObservableObject {
                  DispatchQueue.main.async { self?.updateWindowFrame() }
              }
              .store(in: &cancellables)
+        
+        $showingIndicator
+             .sink { [weak self] _ in
+                 DispatchQueue.main.async { self?.updateWindowFrame() }
+             }
+             .store(in: &cancellables)
     }
-    
-
     
     // Proxy methods
     func togglePlayPause() { spotifyService.togglePlayPause() }

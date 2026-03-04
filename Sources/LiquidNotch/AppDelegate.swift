@@ -53,7 +53,7 @@ class DragContainerView: NSView {
         super.init(frame: frameRect)
         registerForDraggedTypes([.fileURL])
         wantsLayer = true
-        layer?.backgroundColor = NSColor.black.withAlphaComponent(0.01).cgColor // Hit-testable
+        layer?.backgroundColor = NSColor.black.withAlphaComponent(0.01).cgColor
     }
     
     required init?(coder: NSCoder) {
@@ -62,13 +62,11 @@ class DragContainerView: NSView {
     
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
         Logger.log("Container draggingEntered")
-        // Cancel any pending exit — cursor came back
         dragExitTimer?.invalidate()
         dragExitTimer = nil
         
         if let appDelegate = NSApplication.shared.delegate as? AppDelegate {
              DispatchQueue.main.async {
-                 // Set isTargeted FIRST so updateWindowFrame() sees expanded dimensions
                  withAnimation(.easeInOut(duration: 0.2)) {
                      appDelegate.viewModel.isTargeted = true
                  }
@@ -80,7 +78,6 @@ class DragContainerView: NSView {
     
     override func draggingExited(_ sender: NSDraggingInfo?) {
         Logger.log("Container draggingExited")
-        // Delay exit to avoid collapse when cursor hits the top screen edge
         dragExitTimer?.invalidate()
         dragExitTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { [weak self] _ in
             self?.dragExitTimer = nil
@@ -104,7 +101,6 @@ class DragContainerView: NSView {
         dragExitTimer?.invalidate()
         dragExitTimer = nil
         
-        // Reset targeted state
         if let appDelegate = NSApplication.shared.delegate as? AppDelegate {
              DispatchQueue.main.async {
                  withAnimation(.easeInOut(duration: 0.2)) {

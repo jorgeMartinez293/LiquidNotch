@@ -4,9 +4,12 @@ import Combine
 struct NotchView: View {
     @ObservedObject var viewModel: NotchViewModel
     
+    // Physical notch width on MacBook M4 (~180pt)
+    private let physicalNotchWidth: CGFloat = 180
+    
     var body: some View {
         HStack(spacing: 0) {
-            // LEFT SIDE: Album Art (Visible when Playing + Idle, or Expanded)
+            // LEFT SIDE: Album Art (Visible when Playing + Idle + No Indicator)
             if viewModel.shouldShowMusicInfo {
                 AsyncImage(url: URL(string: viewModel.artworkUrl ?? "")) { image in
                     image.resizable().aspectRatio(contentMode: .fit)
@@ -25,15 +28,53 @@ struct NotchView: View {
                 // Background
                 NotchShape(cornerRadius: 20)
                     .fill(Color.black)
-                    // Frame removed, fills container
-                    .overlay(
-                        NotchShape(cornerRadius: 20)
-                            .stroke(Color.white.opacity(0.1), lineWidth: 1)
-                    )
-                    .shadow(radius: 10) // Shadow for depth
                 
-                // Expanded Content
-                // Expanded Content
+                // INDICATOR OVERLAY (Volume / Brightness)
+                // Positioned in the WINGS — icon on the left wing, bar on the right wing
+                // The physical notch (~180pt) is centered and blocks the middle
+                ZStack {
+                    if viewModel.shouldShowIndicator {
+                        HStack(spacing: 0) {
+                            // LEFT WING: Icon
+                            Image(systemName: viewModel.indicatorIconName)
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.white)
+                                .frame(width: 24, height: 24, alignment: .center)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                .frame(width: 65)
+                            
+                            Spacer()
+                        }
+                        .padding(.top, 0)
+                        .padding(.leading, 4)
+                        .transition(.opacity.animation(.easeInOut(duration: 0.3)))
+                    }
+                    
+                    if viewModel.shouldShowIndicator {
+                        HStack(spacing: 0) {
+                            Spacer()
+                            
+                            // RIGHT WING: Progress bar
+                            HStack(spacing: 0) {
+                                ZStack(alignment: .leading) {
+                                    Capsule()
+                                        .fill(Color.white.opacity(0.2))
+                                        .frame(width: 33, height: 4)
+                                    
+                                    Capsule()
+                                        .fill(Color.white)
+                                        .frame(width: max(0, 33 * CGFloat(viewModel.indicatorLevel)), height: 4)
+                                }
+                                .padding(.leading, 2)
+                                .padding(.trailing, 30)
+                            }
+                            .frame(width: 65)
+                        }
+                        .padding(.top, 0)
+                        .transition(.identity) // Insta-hide without any animations
+                    }
+                }
+                
                 // Expanded Content
                 if viewModel.isTargeted {
                     // Central Drop Area
@@ -56,8 +97,8 @@ struct NotchView: View {
                     }
                     .padding(.horizontal, 40)
                     .padding(.top, 40)
-                    .padding(.bottom, 30) // Increased bottom margin
-                    .transition(.opacity) // Fade in/out
+                    .padding(.bottom, 30)
+                    .transition(.opacity)
                 } else if viewModel.isHovered {
                     VStack {
                         Spacer().frame(height: 12)
@@ -71,7 +112,6 @@ struct NotchView: View {
                         Spacer().frame(height: 12)
                         
                         if let droppedFile = viewModel.droppedFile {
-                            // Dropped File Preview - Draggable (Move)
                             DraggableFileView(fileURL: droppedFile, onDragEnded: { operation in
                                 if operation == .move {
                                     DispatchQueue.main.async {
@@ -82,7 +122,6 @@ struct NotchView: View {
                                 }
                             }) {
                                 HStack(alignment: .center, spacing: 16) {
-                                    // File Icon / Preview
                                     Image(nsImage: NSWorkspace.shared.icon(forFile: droppedFile.path))
                                         .resizable()
                                         .aspectRatio(contentMode: .fit)
@@ -118,7 +157,6 @@ struct NotchView: View {
                             .transition(.opacity)
                         } else if let track = viewModel.currentTrack {
                             HStack(alignment: .center, spacing: 16) {
-                                // Left: Album Art
                                 AsyncImage(url: URL(string: track.artworkUrl ?? "")) { image in
                                     image.resizable().aspectRatio(contentMode: .fit)
                                 } placeholder: {
@@ -128,12 +166,10 @@ struct NotchView: View {
                                 .cornerRadius(8)
                                 .shadow(radius: 4)
                                 
-                                // Center: Info + Controls + Progress
                                 VStack(alignment: .leading, spacing: 6) {
                                     Text(track.title).bold().foregroundColor(.white).lineLimit(1)
                                     Text(track.artist).font(.caption).foregroundColor(.gray).lineLimit(1)
                                     
-                                    // Controls
                                     HStack(spacing: 20) {
                                         Button(action: viewModel.previousTrack) {
                                             Image(systemName: "backward.fill")
@@ -143,7 +179,7 @@ struct NotchView: View {
                                         
                                         Button(action: viewModel.togglePlayPause) {
                                             Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
-                                                .padding(10) // Slightly larger for play button
+                                                .padding(10)
                                         }
                                         .buttonStyle(PlainButtonStyle())
                                         
@@ -153,11 +189,10 @@ struct NotchView: View {
                                         }
                                         .buttonStyle(PlainButtonStyle())
                                     }
-                                    .frame(maxWidth: .infinity) // Center the controls horizontally
+                                    .frame(maxWidth: .infinity)
                                     .foregroundColor(.white)
                                     .font(.title)
                                     
-                                    // Progress Bar
                                     let durationSec = track.duration / 1000
                                     let progress = durationSec > 0 ? (viewModel.playerPosition / durationSec) : 0
                                     
@@ -172,145 +207,103 @@ struct NotchView: View {
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 
-                                // Right: Visualizer (Inside Menu)
-                                VisualizerView(color: viewModel.albumColor)
-                                    .frame(height: 30)
-                            }
-                            .padding(.horizontal, 40)
-                            .padding(.bottom, 20)
-                            .transition(.opacity)
-                        } else {
-                            Text("No Music Playing").foregroundColor(.gray)
-                                .padding(.vertical, 20)
+                            VisualizerView(color: viewModel.albumColor, isMoving: viewModel.isPlaying)
+                                .frame(height: 30)
                         }
+                        .padding(.horizontal, 40)
+                        .padding(.bottom, 20)
+                        .transition(.opacity)
+                    } else {
+                        Text("No Music Playing").foregroundColor(.gray)
+                            .padding(.vertical, 20)
                     }
-                    .transition(.opacity)
-
                 }
-            }
-            .zIndex(10)
-            
-            // RIGHT SIDE: Visualizer (COMPACT MODE ONLY)
-            if viewModel.shouldShowMusicInfo {
-                VStack {
-                   Spacer()
-                   VisualizerView(color: viewModel.albumColor)
-                   Spacer()
-                }
-                .frame(height: 24)
-                .padding(.leading, 6)
-                .padding(.trailing, 6)
-                .transition(.move(edge: .leading).combined(with: .opacity))
+                .transition(.opacity)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .overlay(
-            // Removed DropView to use DragContainerView in AppDelegate
-            EmptyView()
-        )
-        .onHover { hovering in
-            // Direct set, no swiftui animation for frame
-            viewModel.setHover(hovering)
+        .zIndex(10)
+        
+        // RIGHT SIDE: Visualizer (COMPACT MODE ONLY — hidden when indicator is active)
+        if viewModel.shouldShowMusicInfo {
+            VStack {
+               Spacer()
+               VisualizerView(color: viewModel.albumColor, isMoving: viewModel.isPlaying)
+               Spacer()
+            }
+            .frame(height: 24)
+            .padding(.leading, 6)
+            .padding(.trailing, 6)
+            .transition(.move(edge: .leading).combined(with: .opacity))
         }
     }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .overlay(
+        EmptyView()
+    )
+    .onHover { hovering in
+        viewModel.setHover(hovering)
+    }
+}
 }
 
 struct VisualizerView: View {
-    var color: Color
-    @State private var barHeights: [CGFloat] = Array(repeating: 10, count: 4)
-    // Slower timer: 0.2s
-    let timer = Timer.publish(every: 0.2, on: .main, in: .common).autoconnect()
-    
-    var body: some View {
+var color: Color
+var isMoving: Bool
+
+var body: some View {
+    TimelineView(.periodic(from: .now, by: 0.15)) { context in
         HStack(spacing: 2) {
             ForEach(0..<4) { index in
+                // If moving, pick a random-ish height based on the timeline context to stay somewhat stable
+                let height = isMoving ? 
+                    CGFloat(8 + (abs(context.date.timeIntervalSince1970.remainder(dividingBy: Double(index + 1) * 0.5)) * 40)) : 10
+                
                 RoundedRectangle(cornerRadius: 1)
                     .fill(color)
-                    .frame(width: 3, height: barHeights[index])
-            }
-        }
-        .frame(height: 24) // Stabilize height to prevent layout jitter
-        .onReceive(timer) { _ in
-            // Slower animation: 0.3s
-            withAnimation(.easeInOut(duration: 0.3)) {
-                for i in 0..<4 {
-                    // Generate fluid random heights
-                    barHeights[i] = CGFloat.random(in: 8...24)
-                }
+                    .frame(width: 3, height: min(24, max(8, height)))
+                    .animation(.easeInOut(duration: 0.15), value: context.date)
             }
         }
     }
+    .frame(height: 24)
+}
 }
 
 struct NotchShape: Shape {
     var cornerRadius: CGFloat
-    // Add a smaller or equal radius for the top to "soften" the connection
-    // The user asked for a curve "arriving" at the top.
     
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        let topRadius: CGFloat = 16 // Curve "outwards" to the top edge (Concave)
+        let topRadius: CGFloat = 16
         
-        // --- Top Left (Concave) ---
-        // Start at Top Edge (minX)
         path.move(to: CGPoint(x: rect.minX, y: rect.minY))
-        
-        // Arc down-and-right to the vertical side (minX + topRadius)
-        // Center is at (minX, minY + topRadius)
-        // Start Angle: 270 (Top) -> End Angle: 0/360 (Right)
-        // To curve "inwards" into the rect from the edge, we use center at (0, r).
-        // Angle 270 is (0, 0). Angle 0 is (r, r).
-        // This creates a defined "scoop".
         path.addArc(center: CGPoint(x: rect.minX, y: rect.minY + topRadius),
                     radius: topRadius,
                     startAngle: Angle(degrees: 270),
                     endAngle: Angle(degrees: 0),
-                    clockwise: false) // SwiftUI Path: clockwise means visually clockwise (increasing angle check needed)
-                    // Actually, let's trace points.
-                    // Center (0, 16). Radius 16.
-                    // 270 deg: (0, 0).
-                    // 0 deg: (16, 16).
-                    // We want 270 -> 360.
+                    clockwise: false)
         
-        // --- Bottom Left (Rounded) ---
-        // Line down to start of bottom-left corner
         path.addLine(to: CGPoint(x: rect.minX + topRadius, y: rect.maxY - cornerRadius))
-        
-        // Standard rounded corner
         path.addArc(center: CGPoint(x: rect.minX + topRadius + cornerRadius, y: rect.maxY - cornerRadius),
                     radius: cornerRadius,
                     startAngle: Angle(degrees: 180),
                     endAngle: Angle(degrees: 90),
-                    clockwise: true) // 180 -> 90 is counter-clockwise mathematically, but Y-down?
-                    // Let's use simple logic:
-                    // Center (r+tr, h-r).
-                    // Start (tr, h-r) -> 180.
-                    // End (tr+r, h) -> 90.
-                    // 180 -> 90. Decreasing.
+                    clockwise: true)
                     
-        // --- Bottom Right (Rounded) ---
         path.addLine(to: CGPoint(x: rect.maxX - topRadius - cornerRadius, y: rect.maxY))
         path.addArc(center: CGPoint(x: rect.maxX - topRadius - cornerRadius, y: rect.maxY - cornerRadius),
                     radius: cornerRadius,
                     startAngle: Angle(degrees: 90),
                     endAngle: Angle(degrees: 0),
-                    clockwise: true) // 90 -> 0. Decreasing.
+                    clockwise: true)
                     
-        // --- Top Right (Concave) ---
-        // Line up to start of top-right arc
         path.addLine(to: CGPoint(x: rect.maxX - topRadius, y: rect.minY + topRadius))
-        
-        // Arc up-and-right to the top edge (maxX)
-        // Center is at (maxX, minY + topRadius)
-        // Start Angle: 180 (Left) -> (maxX-r, r)
-        // End Angle: 270 (Top) -> (maxX, 0)
         path.addArc(center: CGPoint(x: rect.maxX, y: rect.minY + topRadius),
                     radius: topRadius,
                     startAngle: Angle(degrees: 180),
                     endAngle: Angle(degrees: 270),
-                    clockwise: false) // 180 -> 270. Increasing.
+                    clockwise: false)
         
-        // Close Top
         path.addLine(to: CGPoint(x: rect.minX, y: rect.minY))
         
         path.closeSubpath()
